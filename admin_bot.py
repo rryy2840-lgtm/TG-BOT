@@ -9,12 +9,12 @@ bot = telebot.TeleBot(ADMIN_BOT_TOKEN)
 app = Flask(__name__)
 
 @app.route('/')
-def hello():
+def home():
     return "Admin bot is alive!"
 
 # Проверка админа
 def is_admin(user_id):
-    return True
+    return True  # Временно открыто для теста
 
 @bot.message_handler(commands=['start'])
 def start_admin(message):
