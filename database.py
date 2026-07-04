@@ -1,15 +1,36 @@
 import sqlite3
-import random
 import time
-from datetime import datetime
 
 DB_NAME = 'swill_casino.db'
 
+# ===== ПОДКЛЮЧЕНИЕ К БД =====
 def get_db():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
+# ===== ШКАЛА ОПЫТА (1–1000) =====
+def get_level_exp(level):
+    """Возвращает количество опыта, необходимое для достижения указанного уровня"""
+    if level <= 1:
+        return 0
+    if level <= 10:
+        return (level - 1) * 100
+    elif level <= 25:
+        return 1000 + (level - 10) * 200
+    elif level <= 50:
+        return 4000 + (level - 25) * 500
+    elif level <= 75:
+        return 16500 + (level - 50) * 1000
+    elif level <= 100:
+        return 41500 + (level - 75) * 2000
+    else:
+        return 91500 + (level - 100) * 5000
+
+def get_max_level():
+    return 1000
+
+# ===== ИНИЦИАЛИЗАЦИЯ БД =====
 def init_db():
     conn = get_db()
     cur = conn.cursor()
@@ -60,7 +81,7 @@ def init_db():
         )
     ''')
     
-    # Таблица прогресса квестов у игроков
+    # Таблица прогресса квестов
     cur.execute('''
         CREATE TABLE IF NOT EXISTS player_quests (
             user_id INTEGER,
@@ -71,7 +92,7 @@ def init_db():
         )
     ''')
     
-    # Таблица игр (история)
+    # Таблица истории игр
     cur.execute('''
         CREATE TABLE IF NOT EXISTS game_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,14 +107,12 @@ def init_db():
     conn.commit()
     conn.close()
     
-    # Добавляем квесты при первом запуске
     add_default_quests()
 
+# ===== ДЕФОЛТНЫЕ КВЕСТЫ =====
 def add_default_quests():
     conn = get_db()
     cur = conn.cursor()
-    
-    # Проверяем, есть ли уже квесты
     cur.execute("SELECT COUNT(*) FROM quests")
     if cur.fetchone()[0] == 0:
         quests = [
@@ -112,6 +131,7 @@ def add_default_quests():
         conn.commit()
     conn.close()
 
+# ===== РАБОТА С ИГРОКАМИ =====
 def get_player(user_id):
     conn = get_db()
     cur = conn.cursor()
@@ -148,34 +168,6 @@ def update_player_stats(user_id, wins=0, loses=0, games=0, money=0, crystals=0, 
     conn.commit()
     conn.close()
 
-def add_exp(user_id, exp):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT exp, level FROM players WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-    if row:
-        new_exp = row['exp'] + exp
-        level = row['level']
-        # Проверка на повышение уровня
-        from config import LEVEL_EXP
-        while level in LEVEL_EXP and new_exp >= LEVEL_EXP.get(level + 1, 10**9):
-            level += 1
-        cur.execute("UPDATE players SET exp = ?, level = ? WHERE user_id = ?", (new_exp, level, user_id))
-        conn.commit()
-    conn.close()
-    return level
-
-def get_top_players(by='money', limit=50):
-    conn = get_db()
-    cur = conn.cursor()
-    if by == 'money':
-        cur.execute("SELECT user_id, display_name, money FROM players ORDER BY money DESC LIMIT ?", (limit,))
-    elif by == 'level':
-        cur.execute("SELECT user_id, display_name, level, exp FROM players ORDER BY level DESC, exp DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
-
 def get_all_players():
     conn = get_db()
     cur = conn.cursor()
@@ -184,7 +176,63 @@ def get_all_players():
     conn.close()
     return rows
 
-# ----- Админ-функции -----
+def get_top_players(by='money', limit=50):
+    conn = get_db()
+    cur = conn.cursor()
+    if by == 'money':
+        cur.execute("SELECT user_id, display_name, money FROM players ORDER BY money DESC LIMIT ?", (limit,))
+    else:
+        cur.execute("SELECT user_id, display_name, level, exp FROM players ORDER BY level DESC, exp DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+# ===== СИСТЕМА ОПЫТА И УРОВНЕЙ =====
+def add_exp(user_id, exp):
+    """
+    Начисляет опыт игроку, автоматически повышает уровень
+    Возвращает (новый_уровень, новый_опыт)
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT exp, level FROM players WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    
+    if not row:
+        conn.close()
+        return None, None
+    
+    new_exp = row['exp'] + exp
+    new_level = row['level']
+    
+    # Автоматическое повышение уровня
+    while new_level < get_max_level() and new_exp >= get_level_exp(new_level + 1):
+        new_level += 1
+        # Бонус за новый уровень (монеты)
+        bonus = new_level * 10
+        admin_add_money(user_id, bonus)
+    
+    cur.execute("UPDATE players SET exp = ?, level = ? WHERE user_id = ?", (new_exp, new_level, user_id))
+    conn.commit()
+    conn.close()
+    
+    return new_level, new_exp
+
+def add_online_time(user_id, minutes):
+    """Начисляет опыт за проведённое время в боте (0.5 опыта в минуту)"""
+    from config import EXP_PER_MINUTE
+    exp = int(minutes * EXP_PER_MINUTE)
+    if exp > 0:
+        return add_exp(user_id, exp)
+    return None, None
+
+def add_game_exp(user_id, is_win):
+    """Начисляет опыт за игру (победа/поражение)"""
+    from config import EXP_PER_WIN, EXP_PER_LOSE
+    exp = EXP_PER_WIN if is_win else EXP_PER_LOSE
+    return add_exp(user_id, exp)
+
+# ===== АДМИН-ФУНКЦИИ =====
 def admin_add_money(user_id, amount):
     conn = get_db()
     cur = conn.cursor()
@@ -219,6 +267,7 @@ def admin_reset_stats(user_id):
     conn.commit()
     conn.close()
 
+# ===== ПРОМОКОДЫ =====
 def create_promocode(code, reward_type, reward_amount, uses):
     conn = get_db()
     cur = conn.cursor()
@@ -257,6 +306,7 @@ def get_all_promocodes():
     conn.close()
     return rows
 
+# ===== ИСТОРИЯ ИГР =====
 def add_game_history(game_type, players, winner, bet):
     conn = get_db()
     cur = conn.cursor()
@@ -267,6 +317,7 @@ def add_game_history(game_type, players, winner, bet):
     conn.commit()
     conn.close()
 
+# ===== КВЕСТЫ =====
 def get_player_quests(user_id):
     conn = get_db()
     cur = conn.cursor()
@@ -309,5 +360,5 @@ def check_quest_completion(user_id, quest_id):
     conn.close()
     return False
 
-# Инициализация БД при импорте
+# ===== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАПУСКЕ =====
 init_db()
