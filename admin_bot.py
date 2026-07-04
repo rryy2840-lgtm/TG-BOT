@@ -1,5 +1,6 @@
 import telebot
 import threading
+import time
 from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import *
@@ -13,7 +14,7 @@ def home():
     return "Admin is alive!"
 
 def is_admin(user_id):
-    # Временно для теста — открыто всем
+    # Временно открыто для теста. Потом можно заменить на проверку по списку ID.
     return True
 
 @bot.message_handler(commands=['start'])
@@ -23,7 +24,7 @@ def start_admin(message):
         return
     show_admin_panel(message.chat.id)
 
-# ===== НОВАЯ КОМАНДА /clean =====
+# ===== КОМАНДА ДЛЯ ОЧИСТКИ МУСОРА =====
 @bot.message_handler(commands=['clean'])
 def clean_db(message):
     if not is_admin(message.from_user.id):
@@ -261,6 +262,10 @@ def process_zov(message):
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
+    # Принудительно сбрасываем вебхук перед запуском
+    bot.remove_webhook()
+    time.sleep(1)
+    
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10001, debug=False, use_reloader=False)).start()
     print("🔧 Админ-бот запущен!")
     bot.polling(non_stop=True)
