@@ -21,8 +21,8 @@ def start_admin(message):
 def show_admin_panel(chat_id):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton('💰 Дать деньги', callback_data='add_money'),
-        InlineKeyboardButton('💰 Отнять деньги', callback_data='remove_money'),
+        InlineKeyboardButton('💰 Дать валюту', callback_data='add_money'),
+        InlineKeyboardButton('💰 Отнять валюту', callback_data='remove_money'),
         InlineKeyboardButton('⬆️ Повысить уровень', callback_data='up_level'),
         InlineKeyboardButton('⬇️ Понизить уровень', callback_data='down_level'),
         InlineKeyboardButton('🎁 Создать промик', callback_data='create_promo'),
@@ -46,50 +46,125 @@ def admin_callback(call):
     data = call.data
     
     if data == 'add_money':
-        msg = bot.send_message(call.message.chat.id, "Введи ID пользователя и сумму через пробел (например: 123456 100)")
-        bot.register_next_step_handler(msg, process_add_money)
+        msg = bot.send_message(
+            call.message.chat.id,
+            "💰 *Выдача валюты*\n\n"
+            "Введи в формате:\n"
+            "`ID_пользователя ВАЛЮТА КОЛИЧЕСТВО`\n\n"
+            "Доступные валюты:\n"
+            "`money` — 🪙 Золото\n"
+            "`crystals` — 💎 Кристаллы\n"
+            "`shadows` — 🌑 Тени\n"
+            "`flames` — 🔥 Пламя\n\n"
+            "Пример:\n"
+            "`123456789 money 500`",
+            parse_mode='Markdown'
+        )
+        bot.register_next_step_handler(msg, process_add_currency)
+    
     elif data == 'remove_money':
-        msg = bot.send_message(call.message.chat.id, "Введи ID пользователя и сумму через пробел (например: 123456 50)")
-        bot.register_next_step_handler(msg, process_remove_money)
+        msg = bot.send_message(
+            call.message.chat.id,
+            "💰 *Снятие валюты*\n\n"
+            "Введи в формате:\n"
+            "`ID_пользователя ВАЛЮТА КОЛИЧЕСТВО`\n\n"
+            "Пример:\n"
+            "`123456789 money 100`",
+            parse_mode='Markdown'
+        )
+        bot.register_next_step_handler(msg, process_remove_currency)
+    
     elif data == 'up_level':
         msg = bot.send_message(call.message.chat.id, "Введи ID пользователя для повышения уровня")
         bot.register_next_step_handler(msg, process_up_level)
+    
     elif data == 'down_level':
         msg = bot.send_message(call.message.chat.id, "Введи ID пользователя для понижения уровня")
         bot.register_next_step_handler(msg, process_down_level)
+    
     elif data == 'create_promo':
-        msg = bot.send_message(call.message.chat.id, "Введи промик: код, тип (money/crystal/shadow/flame), количество, число использований\nПример: SWILL100 money 100 10")
+        msg = bot.send_message(
+            call.message.chat.id,
+            "Введи промик: код, тип (money/crystal/shadow/flame), количество, число использований\n"
+            "Пример: SWILL100 money 100 10"
+        )
         bot.register_next_step_handler(msg, process_create_promo)
+    
     elif data == 'delete_promo':
         msg = bot.send_message(call.message.chat.id, "Введи код промика для удаления")
         bot.register_next_step_handler(msg, process_delete_promo)
+    
     elif data == 'reset_stats':
         msg = bot.send_message(call.message.chat.id, "Введи ID пользователя для очистки статистики")
         bot.register_next_step_handler(msg, process_reset_stats)
+    
     elif data == 'zov':
-        msg = bot.send_message(call.message.chat.id, "Введи текст рассылки (всем игрокам):")
+        msg = bot.send_message(call.message.chat.id, "📢 Введи текст рассылки (всем игрокам):")
         bot.register_next_step_handler(msg, process_zov)
 
-# ===== ОБРАБОТЧИКИ АДМИН-КОМАНД =====
-def process_add_money(message):
-    try:
-        parts = message.text.split()
-        user_id = int(parts[0])
-        amount = int(parts[1])
-        admin_add_money(user_id, amount)
-        bot.reply_to(message, f"✅ Добавлено {amount} {MAIN_CURRENCY} пользователю {user_id}")
-    except:
-        bot.reply_to(message, "❌ Ошибка. Используй: ID СУММА")
+# ===== ОБРАБОТЧИКИ =====
 
-def process_remove_money(message):
+def process_add_currency(message):
     try:
         parts = message.text.split()
+        if len(parts) != 3:
+            bot.reply_to(message, "❌ Ошибка. Используй: ID ВАЛЮТА КОЛИЧЕСТВО")
+            return
+        
         user_id = int(parts[0])
-        amount = int(parts[1])
-        admin_remove_money(user_id, amount)
-        bot.reply_to(message, f"✅ Отнято {amount} {MAIN_CURRENCY} у пользователя {user_id}")
-    except:
-        bot.reply_to(message, "❌ Ошибка. Используй: ID СУММА")
+        currency = parts[1].lower()
+        amount = int(parts[2])
+        
+        if currency not in ['money', 'crystals', 'shadows', 'flames']:
+            bot.reply_to(message, "❌ Доступные валюты: money, crystals, shadows, flames")
+            return
+        
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(f"UPDATE players SET {currency} = {currency} + ? WHERE user_id = ?", (amount, user_id))
+        conn.commit()
+        conn.close()
+        
+        bot.reply_to(
+            message,
+            f"✅ Добавлено *{amount}* валюты `{currency}` пользователю `{user_id}`",
+            parse_mode='Markdown'
+        )
+    except ValueError:
+        bot.reply_to(message, "❌ Ошибка. Используй: ID ВАЛЮТА КОЛИЧЕСТВО")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка: {e}")
+
+def process_remove_currency(message):
+    try:
+        parts = message.text.split()
+        if len(parts) != 3:
+            bot.reply_to(message, "❌ Ошибка. Используй: ID ВАЛЮТА КОЛИЧЕСТВО")
+            return
+        
+        user_id = int(parts[0])
+        currency = parts[1].lower()
+        amount = int(parts[2])
+        
+        if currency not in ['money', 'crystals', 'shadows', 'flames']:
+            bot.reply_to(message, "❌ Доступные валюты: money, crystals, shadows, flames")
+            return
+        
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(f"UPDATE players SET {currency} = {currency} - ? WHERE user_id = ?", (amount, user_id))
+        conn.commit()
+        conn.close()
+        
+        bot.reply_to(
+            message,
+            f"✅ Снято *{amount}* валюты `{currency}` у пользователя `{user_id}`",
+            parse_mode='Markdown'
+        )
+    except ValueError:
+        bot.reply_to(message, "❌ Ошибка. Используй: ID ВАЛЮТА КОЛИЧЕСТВО")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка: {e}")
 
 def process_up_level(message):
     try:
@@ -118,12 +193,15 @@ def process_down_level(message):
 def process_create_promo(message):
     try:
         parts = message.text.split()
+        if len(parts) != 4:
+            bot.reply_to(message, "❌ Используй: КОД ТИП КОЛИЧЕСТВО ИСПОЛЬЗОВАНИЙ")
+            return
         code = parts[0]
         reward_type = parts[1]
         reward_amount = int(parts[2])
         uses = int(parts[3])
         create_promocode(code, reward_type, reward_amount, uses)
-        bot.reply_to(message, f"✅ Промокод {code} создан!")
+        bot.reply_to(message, f"✅ Промокод `{code}` создан!", parse_mode='Markdown')
     except:
         bot.reply_to(message, "❌ Ошибка. Пример: SWILL100 money 100 10")
 
@@ -131,7 +209,7 @@ def process_delete_promo(message):
     try:
         code = message.text.strip()
         delete_promocode(code)
-        bot.reply_to(message, f"✅ Промокод {code} удалён.")
+        bot.reply_to(message, f"✅ Промокод `{code}` удалён.", parse_mode='Markdown')
     except:
         bot.reply_to(message, "❌ Ошибка.")
 
