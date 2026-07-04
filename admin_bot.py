@@ -10,19 +10,31 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Admin bot is alive!"
+    return "Admin is alive!"
 
-# Проверка админа
 def is_admin(user_id):
-    return True  # Временно открыто для теста
+    # Временно для теста — открыто всем
+    return True
 
 @bot.message_handler(commands=['start'])
 def start_admin(message):
     if not is_admin(message.from_user.id):
-        bot.reply_to(message, "❌ У тебя нет доступа к админ-панели.")
+        bot.reply_to(message, "❌ У тебя нет доступа.")
         return
-    
     show_admin_panel(message.chat.id)
+
+# ===== НОВАЯ КОМАНДА /clean =====
+@bot.message_handler(commands=['clean'])
+def clean_db(message):
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ Нет доступа.")
+        return
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM players WHERE display_name = '/start' OR display_name = '' OR display_name IS NULL")
+    conn.commit()
+    conn.close()
+    bot.reply_to(message, "✅ Мусорные аккаунты удалены.")
 
 def show_admin_panel(chat_id):
     kb = InlineKeyboardMarkup(row_width=2)
@@ -109,7 +121,6 @@ def admin_callback(call):
         bot.register_next_step_handler(msg, process_zov)
 
 # ===== ОБРАБОТЧИКИ =====
-
 def process_add_currency(message):
     try:
         parts = message.text.split()
