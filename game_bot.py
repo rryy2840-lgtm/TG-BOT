@@ -41,7 +41,8 @@ def start(message):
         msg = bot.send_message(
             message.chat.id,
             f"👋 Добро пожаловать в *SWILL CASINO*!\n\n"
-            f"Для начала игры введи своё *игровое имя* (никнейм, который будут видеть другие):"
+            f"Для начала игры введи своё *игровое имя* (никнейм, который будут видеть другие):",
+            parse_mode='Markdown'
         )
         bot.register_next_step_handler(msg, register_name)
     else:
@@ -62,7 +63,8 @@ def register_name(message):
         message.chat.id,
         f"✅ Отлично, *{display_name}*! Теперь ты в игре.\n"
         f"Твой баланс: {MAIN_CURRENCY} 100\n\n"
-        f"Используй /play, чтобы начать!"
+        f"Используй /play, чтобы начать!",
+        parse_mode='Markdown'
     )
     show_main_menu(message.chat.id, user_id)
 
@@ -92,7 +94,7 @@ def stats_command(message):
     user_id = message.from_user.id
     player = get_player(user_id)
     if not player:
-        bot.reply_to(message, "Сначала /start")
+        bot.reply_to(message, "❌ Сначала зарегистрируйся через /start")
         return
     
     text = (
@@ -140,7 +142,7 @@ def exchange_command(message):
     user_id = message.from_user.id
     player = get_player(user_id)
     if not player:
-        bot.reply_to(message, "Сначала /start")
+        bot.reply_to(message, "❌ Сначала зарегистрируйся через /start")
         return
     
     kb = InlineKeyboardMarkup(row_width=2)
@@ -159,19 +161,18 @@ def exchange_command(message):
         parse_mode='Markdown'
     )
 
-# ===== КВЕСТЫ =====
 @bot.message_handler(commands=['quests'])
 def quests_command(message):
     user_id = message.from_user.id
     show_quests(message.chat.id, user_id)
 
-# ===== ОБРАБОТЧИК КНОПОК =====
+# ===== ОБРАБОТЧИК КОЛБЭКОВ =====
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
     player = get_player(user_id)
     if not player:
-        bot.answer_callback_query(call.id, "Сначала зарегистрируйся через /start")
+        bot.answer_callback_query(call.id, "❌ Сначала зарегистрируйся через /start")
         return
     
     data = call.data
@@ -202,7 +203,7 @@ def handle_callback(call):
         rate = rates.get((from_cur, to_cur), 1)
         msg = bot.send_message(
             call.message.chat.id,
-            f"Курс: 1 {from_cur} = {rate} {to_cur}\n"
+            f"💱 Курс: 1 {from_cur} = {rate} {to_cur}\n"
             f"Сколько {from_cur} хочешь обменять?"
         )
         bot.register_next_step_handler(msg, process_exchange, user_id, from_cur, to_cur, rate)
@@ -245,6 +246,7 @@ def handle_callback(call):
     elif data == 'top_level':
         show_top_by(call.message.chat.id, 'level')
 
+# ===== ОБМЕННИК =====
 def process_exchange(message, user_id, from_cur, to_cur, rate):
     try:
         amount = int(message.text.strip())
@@ -274,10 +276,14 @@ def process_exchange(message, user_id, from_cur, to_cur, rate):
     
     bot.reply_to(
         message,
-        f"✅ Обмен завершён!\n-{amount} {from_cur}\n+{new_amount} {to_cur}\n\nНовый баланс: {get_player(user_id)[to_cur]} {to_cur}",
+        f"✅ Обмен завершён!\n"
+        f"-{amount} {from_cur}\n"
+        f"+{new_amount} {to_cur}\n\n"
+        f"Новый баланс: {get_player(user_id)[to_cur]} {to_cur}",
         parse_mode='Markdown'
     )
 
+# ===== ИГРЫ =====
 def show_games(chat_id):
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
@@ -287,44 +293,6 @@ def show_games(chat_id):
     )
     bot.send_message(chat_id, "🎯 *Выбери игру:*", reply_markup=kb, parse_mode='Markdown')
 
-def top_menu(chat_id):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton('💰 По деньгам', callback_data='top_money'),
-        InlineKeyboardButton('🏅 По уровню', callback_data='top_level')
-    )
-    bot.send_message(chat_id, "🏆 *Выбери категорию топа:*", reply_markup=kb, parse_mode='Markdown')
-
-def show_top_by(chat_id, by):
-    players = get_top_players(by)
-    if not players:
-        bot.send_message(chat_id, "❌ Нет игроков.")
-        return
-    text = f"🏆 *Топ-50 по {'деньгам' if by == 'money' else 'уровню'}*\n\n"
-    for i, p in enumerate(players, 1):
-        if by == 'money':
-            text += f"{i}. {p['display_name']} — {p['money']} {MAIN_CURRENCY}\n"
-        else:
-            text += f"{i}. {p['display_name']} — Уровень {p['level']} (опыт: {p['exp']})\n"
-        if i >= 50:
-            break
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton('🔙 Назад', callback_data='close'))
-    bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
-
-def show_quests(chat_id, user_id):
-    quests = get_player_quests(user_id)
-    if not quests:
-        bot.send_message(chat_id, "📜 Пока нет активных квестов.")
-        return
-    text = "📜 *Твои квесты:*\n\n"
-    for q in quests:
-        status = "✅ Выполнен" if q['completed'] else f"📊 {q['progress']}/{q['requirement_value']}"
-        text += f"*{q['name']}*\n{q['description']}\n{status}\n\n"
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton('🔙 Назад', callback_data='close'))
-    bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
-
 def ask_roulette_bet(chat_id, user_id):
     player = get_player(user_id)
     min_bet, max_bet = get_bet_limits(player['level'])
@@ -333,7 +301,8 @@ def ask_roulette_bet(chat_id, user_id):
         f"🔫 *Русская рулетка*\n"
         f"Твой уровень: {player['level']}\n"
         f"Ставка от {min_bet} до {max_bet} {MAIN_CURRENCY}:\n"
-        f"(введи число)"
+        f"(введи число)",
+        parse_mode='Markdown'
     )
     bot.register_next_step_handler(msg, process_roulette, user_id, min_bet, max_bet)
 
@@ -385,7 +354,8 @@ def ask_red_black_bet(chat_id, user_id):
         f"🔴 *Красное / Чёрное*\n"
         f"Твой уровень: {player['level']}\n"
         f"Ставка от {min_bet} до {max_bet} {MAIN_CURRENCY}:\n"
-        f"(введи число)"
+        f"(введи число)",
+        parse_mode='Markdown'
     )
     bot.register_next_step_handler(msg, process_red_black_bet, user_id, min_bet, max_bet)
 
@@ -412,7 +382,8 @@ def process_red_black_bet(message, user_id, min_bet, max_bet):
     bot.send_message(
         message.chat.id,
         f"Выбери цвет (ставка {bet} {MAIN_CURRENCY}):",
-        reply_markup=kb
+        reply_markup=kb,
+        parse_mode='Markdown'
     )
 
 def ask_dice_bet(chat_id, user_id):
@@ -423,7 +394,8 @@ def ask_dice_bet(chat_id, user_id):
         f"🎲 *Кости*\n"
         f"Твой уровень: {player['level']}\n"
         f"Ставка от {min_bet} до {max_bet} {MAIN_CURRENCY}:\n"
-        f"(введи число)"
+        f"(введи число)",
+        parse_mode='Markdown'
     )
     bot.register_next_step_handler(msg, process_dice, user_id, min_bet, max_bet)
 
@@ -464,6 +436,46 @@ def process_dice(message, user_id, min_bet, max_bet):
         text + f"\nБаланс: {get_player(user_id)['money']} {MAIN_CURRENCY}",
         parse_mode='Markdown'
     )
+
+# ===== ТОП =====
+def top_menu(chat_id):
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton('💰 По деньгам', callback_data='top_money'),
+        InlineKeyboardButton('🏅 По уровню', callback_data='top_level')
+    )
+    bot.send_message(chat_id, "🏆 *Выбери категорию топа:*", reply_markup=kb, parse_mode='Markdown')
+
+def show_top_by(chat_id, by):
+    players = get_top_players(by)
+    if not players:
+        bot.send_message(chat_id, "❌ Нет игроков.")
+        return
+    text = f"🏆 *Топ-50 по {'деньгам' if by == 'money' else 'уровню'}*\n\n"
+    for i, p in enumerate(players, 1):
+        if by == 'money':
+            text += f"{i}. {p['display_name']} — {p['money']} {MAIN_CURRENCY}\n"
+        else:
+            text += f"{i}. {p['display_name']} — Уровень {p['level']} (опыт: {p['exp']})\n"
+        if i >= 50:
+            break
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton('🔙 Назад', callback_data='close'))
+    bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
+
+# ===== КВЕСТЫ =====
+def show_quests(chat_id, user_id):
+    quests = get_player_quests(user_id)
+    if not quests:
+        bot.send_message(chat_id, "📜 Пока нет активных квестов.")
+        return
+    text = "📜 *Твои квесты:*\n\n"
+    for q in quests:
+        status = "✅ Выполнен" if q['completed'] else f"📊 {q['progress']}/{q['requirement_value']}"
+        text += f"*{q['name']}*\n{q['description']}\n{status}\n\n"
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton('🔙 Назад', callback_data='close'))
+    bot.send_message(chat_id, text, reply_markup=kb, parse_mode='Markdown')
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
