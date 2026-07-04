@@ -11,8 +11,8 @@ bot = telebot.TeleBot(GAME_BOT_TOKEN)
 app = Flask(__name__)
 
 @app.route('/')
-def hello():
-    return "I am alive!"
+def home():
+    return "Game bot is alive!"
 
 # ===== ПАССИВНЫЙ ОПЫТ =====
 last_active = {}
@@ -485,7 +485,6 @@ def show_quests(chat_id, user_id):
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
-    # Запускаем веб-сервер в отдельном потоке
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)).start()
     print("🎰 Игровой бот запущен!")
     bot.polling(non_stop=True)
