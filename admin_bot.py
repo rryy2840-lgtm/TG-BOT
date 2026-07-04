@@ -1,14 +1,20 @@
 import telebot
+import threading
+from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import *
 from database import *
 
 bot = telebot.TeleBot(ADMIN_BOT_TOKEN)
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return "Admin bot is alive!"
 
 # Проверка админа
 def is_admin(user_id):
-    # Простая проверка по юзернейму (можно заменить на ID)
-    return True  # Для теста открыт всем, потом заменишь на проверку
+    return True
 
 @bot.message_handler(commands=['start'])
 def start_admin(message):
@@ -244,5 +250,6 @@ def process_zov(message):
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10001, debug=False, use_reloader=False)).start()
     print("🔧 Админ-бот запущен!")
     bot.polling(non_stop=True)
