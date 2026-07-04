@@ -485,6 +485,10 @@ def show_quests(chat_id, user_id):
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
+    # Принудительно сбрасываем вебхук перед запуском (чтобы избежать ошибки 409)
+    bot.remove_webhook()
+    time.sleep(1)
+    
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000, debug=False, use_reloader=False)).start()
     print("🎰 Игровой бот запущен!")
     bot.polling(non_stop=True)
