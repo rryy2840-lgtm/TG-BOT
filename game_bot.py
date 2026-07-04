@@ -10,54 +10,88 @@ from database import *
 bot = telebot.TeleBot(GAME_BOT_TOKEN)
 
 # ===== РЕГИСТРАЦИЯ / СТАРТ =====
-@bot.message_handler(commands=['start'])
-def start(message):
+@bot.message_handler(commands=['exchange'])
+def exchange_command(message):
     user_id = message.from_user.id
-    username = message.from_user.username or 'unknown'
     player = get_player(user_id)
-    
     if not player:
-        # Просим ввести имя для регистрации
-        msg = bot.send_message(
-            message.chat.id,
-            f"👋 Добро пожаловать в *SWILL CASINO*!\n\n"
-            f"Для начала игры введи своё *игровое имя* (никнейм, который будут видеть другие):"
-        )
-        bot.register_next_step_handler(msg, register_name)
-    else:
-        show_main_menu(message.chat.id, user_id)
-
-def register_name(message):
-    user_id = message.from_user.id
-    username = message.from_user.username or 'unknown'
-    display_name = message.text.strip()
-    
-    if len(display_name) < 2 or len(display_name) > 30:
-        msg = bot.reply_to(message, "❌ Имя должно быть от 2 до 30 символов. Попробуй снова:")
-        bot.register_next_step_handler(msg, register_name)
+        bot.reply_to(message, "Сначала /start")
         return
     
-    create_player(user_id, username, display_name)
-    bot.send_message(
-        message.chat.id,
-        f"✅ Отлично, *{display_name}*! Теперь ты в игре.\n"
-        f"Твой баланс: {MAIN_CURRENCY} 100\n\n"
-        f"Используй /play, чтобы начать!"
-    )
-    show_main_menu(message.chat.id, user_id)
-
-def show_main_menu(chat_id, user_id):
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton('🎰 Играть', callback_data='play'),
-        InlineKeyboardButton('📊 Статистика', callback_data='stats'),
-        InlineKeyboardButton('🏆 Топ игроков', callback_data='top'),
-        InlineKeyboardButton('📜 Квесты', callback_data='quests')
+        InlineKeyboardButton('🪙 Золото → 💎 Кристаллы', callback_data='ex_gold_crystal'),
+        InlineKeyboardButton('💎 Кристаллы → 🪙 Золото', callback_data='ex_crystal_gold'),
+        InlineKeyboardButton('🪙 Золото → 🌑 Тени', callback_data='ex_gold_shadow'),
+        InlineKeyboardButton('🌑 Тени → 🪙 Золото', callback_data='ex_shadow_gold'),
+        InlineKeyboardButton('🪙 Золото → 🔥 Пламя', callback_data='ex_gold_flame'),
+        InlineKeyboardButton('🔥 Пламя → 🪙 Золото', callback_data='ex_flame_gold')
     )
     bot.send_message(
-        chat_id,
-        "🏠 *Главное меню*\nВыбери действие:",
+        message.chat.id,
+        "💱 *Обменник валют*\nВыбери направление обмена:",
         reply_markup=kb,
+        parse_mode='Markdown'
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('ex_'))
+def exchange_callback(call):
+    user_id = call.from_user.id
+    _, from_cur, to_cur = call.data.split('_')
+    
+    # Курсы обмена (1 к 1 для простоты)
+    rates = {
+        ('gold', 'crystal'): 1,
+        ('crystal', 'gold'): 1,
+        ('gold', 'shadow'): 2,
+        ('shadow', 'gold'): 0.5,
+        ('gold', 'flame'): 3,
+        ('flame', 'gold'): 0.33,
+    }
+    
+    rate = rates.get((from_cur, to_cur), 1)
+    msg = bot.send_message(
+        call.message.chat.id,
+        f"Курс: 1 {from_cur} = {rate} {to_cur}\n"
+        f"Сколько {from_cur} хочешь обменять?"
+    )
+    bot.register_next_step_handler(msg, process_exchange, user_id, from_cur, to_cur, rate)
+
+def process_exchange(message, user_id, from_cur, to_cur, rate):
+    try:
+        amount = int(message.text.strip())
+        if amount <= 0:
+            bot.reply_to(message, "❌ Введи положительное число.")
+            return
+    except:
+        bot.reply_to(message, "❌ Введи число.")
+        return
+    
+    player = get_player(user_id)
+    if not player:
+        bot.reply_to(message, "❌ Ты не зарегистрирован.")
+        return
+    
+    # Проверка наличия валюты
+    balance = player[from_cur]
+    if balance < amount:
+        bot.reply_to(message, f"❌ Недостаточно {from_cur}. У тебя {balance}.")
+        return
+    
+    # Обмен
+    new_amount = int(amount * rate)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE players SET {from_cur} = {from_cur} - ?, {to_cur} = {to_cur} + ? WHERE user_id = ?", (amount, new_amount, user_id))
+    conn.commit()
+    conn.close()
+    
+    bot.reply_to(
+        message,
+        f"✅ Обмен завершён!\n"
+        f"-{amount} {from_cur}\n"
+        f"+{new_amount} {to_cur}\n"
+        f"Новый баланс: {get_player(user_id)[to_cur]} {to_cur}",
         parse_mode='Markdown'
     )
 
