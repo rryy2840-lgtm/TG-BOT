@@ -1,7 +1,14 @@
-# ===== КОНФИГ =====
+import os
+
+# ===== ТОКЕНЫ =====
 GAME_BOT_TOKEN = '8902715438:AAGC5vjT4LT9BRvkwfNle1imvjZMYe9i_vE'
 ADMIN_BOT_TOKEN = '7973103417:AAEW4Z-lnpdMCMgeku_Y7owwlXvRs6g4Fso'
 ADMIN_ID = '@krak2222'
+
+# ===== ПУТЬ К БАЗЕ ДАННЫХ (сохраняется между перезапусками) =====
+# Render даёт постоянную папку /opt/render/project/src
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'swill_casino.db')
 
 # ===== ВАЛЮТЫ =====
 MAIN_CURRENCY = '🪙 Золото'
@@ -43,7 +50,7 @@ for i in range(1, 1001):
         LEVEL_EXP[i] = 91500 + (i-100) * 5000
 
 # ===== НАЧИСЛЕНИЕ ОПЫТА =====
-EXP_PER_MINUTE = 0.5   # +5 за 10 минут
-EXP_PER_5_GAMES = 25   # +25 за 5 игр
-EXP_PER_WIN = 10       # +10 за победу
-EXP_PER_LOSE = 3       # +3 за поражение
+EXP_PER_MINUTE = 0.5
+EXP_PER_5_GAMES = 25
+EXP_PER_WIN = 10
+EXP_PER_LOSE = 3
