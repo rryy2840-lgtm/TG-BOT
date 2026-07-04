@@ -1,36 +1,12 @@
 import sqlite3
 import time
+from config import DB_PATH
 
-DB_NAME = 'swill_casino.db'
-
-# ===== ПОДКЛЮЧЕНИЕ К БД =====
 def get_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-# ===== ШКАЛА ОПЫТА (1–1000) =====
-def get_level_exp(level):
-    """Возвращает количество опыта, необходимое для достижения указанного уровня"""
-    if level <= 1:
-        return 0
-    if level <= 10:
-        return (level - 1) * 100
-    elif level <= 25:
-        return 1000 + (level - 10) * 200
-    elif level <= 50:
-        return 4000 + (level - 25) * 500
-    elif level <= 75:
-        return 16500 + (level - 50) * 1000
-    elif level <= 100:
-        return 41500 + (level - 75) * 2000
-    else:
-        return 91500 + (level - 100) * 5000
-
-def get_max_level():
-    return 1000
-
-# ===== ИНИЦИАЛИЗАЦИЯ БД =====
 def init_db():
     conn = get_db()
     cur = conn.cursor()
@@ -92,24 +68,11 @@ def init_db():
         )
     ''')
     
-    # Таблица истории игр
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS game_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            game_type TEXT,
-            players TEXT,
-            winner INTEGER,
-            bet INTEGER,
-            timestamp INTEGER
-        )
-    ''')
-    
     conn.commit()
     conn.close()
     
     add_default_quests()
 
-# ===== ДЕФОЛТНЫЕ КВЕСТЫ =====
 def add_default_quests():
     conn = get_db()
     cur = conn.cursor()
@@ -131,7 +94,6 @@ def add_default_quests():
         conn.commit()
     conn.close()
 
-# ===== РАБОТА С ИГРОКАМИ =====
 def get_player(user_id):
     conn = get_db()
     cur = conn.cursor()
@@ -187,47 +149,33 @@ def get_top_players(by='money', limit=50):
     conn.close()
     return rows
 
-# ===== СИСТЕМА ОПЫТА И УРОВНЕЙ =====
+# ===== СИСТЕМА ОПЫТА =====
 def add_exp(user_id, exp):
-    """
-    Начисляет опыт игроку, автоматически повышает уровень
-    Возвращает (новый_уровень, новый_опыт)
-    """
+    from config import LEVEL_EXP
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT exp, level FROM players WHERE user_id = ?", (user_id,))
     row = cur.fetchone()
-    
-    if not row:
+    if row:
+        new_exp = row['exp'] + exp
+        level = row['level']
+        while level < 1000 and new_exp >= LEVEL_EXP.get(level + 1, 10**9):
+            level += 1
+            admin_add_money(user_id, level * 10)
+        cur.execute("UPDATE players SET exp = ?, level = ? WHERE user_id = ?", (new_exp, level, user_id))
+        conn.commit()
         conn.close()
-        return None, None
-    
-    new_exp = row['exp'] + exp
-    new_level = row['level']
-    
-    # Автоматическое повышение уровня
-    while new_level < get_max_level() and new_exp >= get_level_exp(new_level + 1):
-        new_level += 1
-        # Бонус за новый уровень (монеты)
-        bonus = new_level * 10
-        admin_add_money(user_id, bonus)
-    
-    cur.execute("UPDATE players SET exp = ?, level = ? WHERE user_id = ?", (new_exp, new_level, user_id))
-    conn.commit()
+        return level, new_exp
     conn.close()
-    
-    return new_level, new_exp
+    return None, None
 
 def add_online_time(user_id, minutes):
-    """Начисляет опыт за проведённое время в боте (0.5 опыта в минуту)"""
-    from config import EXP_PER_MINUTE
-    exp = int(minutes * EXP_PER_MINUTE)
+    exp = int(minutes * 0.5)
     if exp > 0:
         return add_exp(user_id, exp)
     return None, None
 
 def add_game_exp(user_id, is_win):
-    """Начисляет опыт за игру (победа/поражение)"""
     from config import EXP_PER_WIN, EXP_PER_LOSE
     exp = EXP_PER_WIN if is_win else EXP_PER_LOSE
     return add_exp(user_id, exp)
@@ -306,17 +254,6 @@ def get_all_promocodes():
     conn.close()
     return rows
 
-# ===== ИСТОРИЯ ИГР =====
-def add_game_history(game_type, players, winner, bet):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('''
-        INSERT INTO game_history (game_type, players, winner, bet, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (game_type, ','.join(map(str, players)), winner, bet, int(time.time())))
-    conn.commit()
-    conn.close()
-
 # ===== КВЕСТЫ =====
 def get_player_quests(user_id):
     conn = get_db()
@@ -331,34 +268,5 @@ def get_player_quests(user_id):
     conn.close()
     return rows
 
-def update_quest_progress(user_id, quest_id, progress):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('''
-        INSERT INTO player_quests (user_id, quest_id, progress, completed)
-        VALUES (?, ?, ?, 0)
-        ON CONFLICT(user_id, quest_id) DO UPDATE SET progress = progress + ?
-    ''', (user_id, quest_id, progress))
-    conn.commit()
-    conn.close()
-
-def check_quest_completion(user_id, quest_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute('''
-        SELECT q.requirement_value, pq.progress, pq.completed
-        FROM quests q
-        JOIN player_quests pq ON q.id = pq.quest_id
-        WHERE q.id = ? AND pq.user_id = ?
-    ''', (quest_id, user_id))
-    row = cur.fetchone()
-    if row and not row['completed'] and row['progress'] >= row['requirement_value']:
-        cur.execute("UPDATE player_quests SET completed = 1 WHERE user_id = ? AND quest_id = ?", (user_id, quest_id))
-        conn.commit()
-        conn.close()
-        return True
-    conn.close()
-    return False
-
-# ===== ИНИЦИАЛИЗАЦИЯ ПРИ ЗАПУСКЕ =====
+# ===== ИНИЦИАЛИЗАЦИЯ =====
 init_db()
